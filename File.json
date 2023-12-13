@@ -1,0 +1,164 @@
+import re
+import sys
+import json
+from collections import defaultdict
+
+class InMemoryFileSystem:
+    def __init__(self):
+        self.root = defaultdict(dict)
+        self.current_dir = self.root
+
+    def mkdir(self, directory):
+        if directory not in self.current_dir:
+            self.current_dir[directory] = {}
+        else:
+            print(f"Directory '{directory}' already exists")
+
+    def cd(self, path):
+        if path == '/':
+            self.current_dir = self.root
+            return
+        
+        path_components = path.split('/')
+        if path_components[0] == '':
+            self.current_dir = self.root
+            path_components = path_components[1:]
+
+        for component in path_components:
+            if component == '..':
+                if self.current_dir != self.root:
+                    self.current_dir = self._get_parent_directory(self.current_dir)
+            elif component in self.current_dir:
+                self.current_dir = self.current_dir[component]
+            else:
+                print(f"Directory '{path}' does not exist")
+                return
+
+    def ls(self):
+        for item in self.current_dir:
+            print(item)
+
+    def grep(self, pattern, filename):
+        if filename in self.current_dir and isinstance(self.current_dir[filename], str):
+            file_content = self.current_dir[filename]
+            matches = re.findall(pattern, file_content)
+            if matches:
+                print("Matches found:")
+                for match in matches:
+                    print(match)
+            else:
+                print("Pattern not found in the file")
+        else:
+            print(f"File '{filename}' not found")
+
+    def cat(self, filename):
+        if filename in self.current_dir and isinstance(self.current_dir[filename], str):
+            print(self.current_dir[filename])
+        else:
+            print(f"File '{filename}' not found")
+
+    def touch(self, filename):
+        if filename not in self.current_dir:
+            self.current_dir[filename] = ""
+        else:
+            print(f"File '{filename}' already exists")
+
+    def echo(self, text, filename):
+        if filename in self.current_dir and isinstance(self.current_dir[filename], str):
+            self.current_dir[filename] += text
+        else:
+            self.current_dir[filename] = text
+
+    def mv(self, source, destination):
+        if source in self.current_dir:
+            self.current_dir[destination] = self.current_dir.pop(source)
+        else:
+            print(f"File/Directory '{source}' not found")
+
+    def cp(self, source, destination):
+        if source in self.current_dir:
+            self.current_dir[destination] = self.current_dir[source]
+        else:
+            print(f"File/Directory '{source}' not found")
+
+    def rm(self, item):
+        if item in self.current_dir:
+            del self.current_dir[item]
+        else:
+            print(f"File/Directory '{item}' not found")
+
+    def _get_parent_directory(self, directory):
+        for key, value in self.root.items():
+            if value == directory:
+                return self.root[key]
+        return self.root  # Return root if parent not found
+
+    def save_state(self, path):
+        with open(path, 'w') as file:
+            json.dump(self.root, file)
+        print(f"State saved to '{path}'")
+
+    def load_state(self, path):
+        with open(path, 'r') as file:
+            self.root = json.load(file)
+            self.current_dir = self.root
+        print(f"State loaded from '{path}'")
+
+# Check for command line arguments to save or load state
+if len(sys.argv) == 2:
+    try:
+        input_data = json.loads(sys.argv[1])
+        if 'save_state' in input_data and input_data['save_state'] == 'true':
+            path = input_data['path']
+            filesystem = InMemoryFileSystem()
+            filesystem.save_state(path)
+        elif 'load_state' in input_data and input_data['load_state'] == 'true':
+            path = input_data['path']
+            filesystem = InMemoryFileSystem()
+            filesystem.load_state(path)
+            print("File system state loaded. You can now interact with the file system.")
+        else:
+            print("Invalid input for saving/loading state")
+    except json.JSONDecodeError:
+        print("Invalid JSON input")
+else:
+    # If no command line arguments, run the file system in interactive mode
+    filesystem = InMemoryFileSystem()
+
+    while True:
+        command = input("Enter command: ").split(' ', 1)
+        operation = command[0]
+
+        if operation == 'mkdir':
+            directory = command[1]
+            filesystem.mkdir(directory)
+        elif operation == 'cd':
+            path = command[1]
+            filesystem.cd(path)
+        elif operation == 'ls':
+            filesystem.ls()
+        elif operation == 'grep':
+            pattern, filename = command[1].split(' ', 1)
+            filesystem.grep(pattern, filename)
+        elif operation == 'cat':
+            filename = command[1]
+            filesystem.cat(filename)
+        elif operation == 'touch':
+            filename = command[1]
+            filesystem.touch(filename)
+        elif operation == 'echo':
+            text, filename = command[1].split('>', 1)
+            filesystem.echo(text.strip(), filename.strip())
+        elif operation == 'mv':
+            source, destination = command[1].split(' ', 1)
+            filesystem.mv(source, destination)
+        elif operation == 'cp':
+            source, destination = command[1].split(' ', 1)
+            filesystem.cp(source, destination)
+        elif operation == 'rm':
+            item = command[1]
+            filesystem.rm(item)
+        elif operation == 'exit':
+            break
+        else:
+            print("Invalid command")
